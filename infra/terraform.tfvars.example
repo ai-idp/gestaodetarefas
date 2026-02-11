@@ -1,0 +1,12 @@
+# Project configuration
+project = "gestaodetarefas"
+
+# AWS configuration
+aws_region = "us-east-1"
+
+# Container configuration
+container_port = 8080
+
+# Network configuration (replace with your VPC/Subnet IDs)
+vpc_id     = "vpc-xxxxxxxxx"
+subnet_ids = ["subnet-xxxxxxxx", "subnet-yyyyyyyy"]

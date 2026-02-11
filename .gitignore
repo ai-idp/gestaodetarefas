@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+*.log
+
+# tsoa generated
+src/routes.ts
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform.lock.hcl

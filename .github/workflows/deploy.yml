@@ -1,0 +1,113 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+permissions:
+  contents: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  PROJECT_NAME: gestaodetarefas
+  CONTAINER_PORT: 8080
+
+jobs:
+  deploy:
+    name: Build & Deploy
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get ECR Repository URL
+        id: ecr
+        run: |
+          ECR_URL=$(aws ecr describe-repositories --repository-names ${{ env.PROJECT_NAME }} --query 'repositories[0].repositoryUri' --output text)
+          echo "repository_url=$ECR_URL" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REPOSITORY: ${{ steps.ecr.outputs.repository_url }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+          docker build -t $ECR_REPOSITORY:latest .
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REPOSITORY:latest
+
+      - name: Get ECS cluster and service names
+        id: ecs
+        run: |
+          CLUSTER_NAME=${{ env.PROJECT_NAME }}-cluster
+          SERVICE_NAME=${{ env.PROJECT_NAME }}-service
+          echo "cluster_name=$CLUSTER_NAME" >> $GITHUB_OUTPUT
+          echo "service_name=$SERVICE_NAME" >> $GITHUB_OUTPUT
+
+      - name: Force new deployment
+        run: |
+          aws ecs update-service \
+            --cluster ${{ steps.ecs.outputs.cluster_name }} \
+            --service ${{ steps.ecs.outputs.service_name }} \
+            --force-new-deployment
+
+      - name: Wait for deployment to stabilize
+        run: |
+          aws ecs wait services-stable \
+            --cluster ${{ steps.ecs.outputs.cluster_name }} \
+            --services ${{ steps.ecs.outputs.service_name }}
+
+      - name: Get Application URL
+        id: app-url
+        run: |
+          ALB_ARN=$(aws ecs describe-services --cluster ${{ steps.ecs.outputs.cluster_name }} --services ${{ steps.ecs.outputs.service_name }} --query 'services[0].loadBalancers[0].targetGroupArn' --output text)
+          ALB_DNS=$(aws elbv2 describe-target-groups --target-group-arns $ALB_ARN --query 'TargetGroups[0].LoadBalancerArns[0]' --output text | xargs aws elbv2 describe-load-balancers --load-balancer-arns --query 'LoadBalancers[0].DNSName' --output text)
+          echo "url=http://$ALB_DNS" >> $GITHUB_OUTPUT
+          echo "## Deployment Successful! :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Application URL:** http://$ALB_DNS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Update deployment info
+        env:
+          APP_URL: ${{ steps.app-url.outputs.url }}
+          ENVIRONMENT: ${{ github.event.inputs.environment || 'dev' }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          cat > deployment-info.json << EOF
+          {
+            "url": "$APP_URL",
+            "healthUrl": "$APP_URL/health",
+            "environment": "$ENVIRONMENT",
+            "deployedAt": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "commitSha": "$COMMIT_SHA"
+          }
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add deployment-info.json
+          git diff --staged --quiet || git commit -m "chore: update deployment info [skip ci]"
+          git push || echo "Nothing to push"
