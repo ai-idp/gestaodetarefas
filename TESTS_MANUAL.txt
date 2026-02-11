@@ -1,0 +1,28 @@
+TESTES MANUAIS - ENDPOINTS DE TAREFAS
+=====================================
+
+TESTE 1: POST /tasks com {"title": "Teste"}
+Esperado: 201 Created
+Validar: id (UUID), status=PENDING, created_at, updated_at
+
+TESTE 2: POST /tasks com {"title": "Tarefa", "description": "Desc"}
+Esperado: 201 Created
+Validar: description preenchida
+
+TESTE 3: POST /tasks com {}
+Esperado: 400 Bad Request
+Validar: mensagem "Title is required"
+
+TESTE 4: POST /tasks com {"title": "   "}
+Esperado: 400 Bad Request
+Validar: validação de espaços em branco
+
+TESTE 5: POST /tasks/{id}/done
+Esperado: 200 OK
+Validar: status=DONE, updated_at atualizado
+
+TESTE 6: POST /tasks/id-inexistente/done
+Esperado: 404 Not Found
+Validar: mensagem "Task not found"
+
+Executar com: bash test-endpoints.sh
