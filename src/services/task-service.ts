@@ -1,7 +1,7 @@
 import { Task, TaskStatus, CreateTaskRequest } from "../models/task.js";
 import { taskRepository } from "../repositories/task-repository.js";
 
-class TaskService {
+export class TaskService {
   constructor(public repository = taskRepository) {}
 
   createTask(request: CreateTaskRequest): Task {
@@ -17,7 +17,7 @@ class TaskService {
     const task: Task = {
       id,
       title: request.title,
-      description: request.description,
+      description: request.description ?? null,
       status: TaskStatus.PENDING,
       created_at: new Date(),
       updated_at: new Date(),

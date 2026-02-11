@@ -1,0 +1,184 @@
+{
+  "appName": "gestaodetarefas",
+  "proposal": {
+    "changeId": "add-task-query",
+    "title": "Consulta de Tarefas - Task Manager",
+    "why": "Permitir a consulta de tarefas registradas no sistema, tanto individualmente por ID quanto em lista completa, de forma simples e performática.",
+    "whatChanges": [
+      "Criar modelo Task com campos id, title, description, status, created_at, updated_at",
+      "Criar endpoint GET /tasks/{id} para consulta por ID",
+      "Criar endpoint GET /tasks para listagem de tarefas",
+      "Implementar repositório in-memory para armazenamento de tarefas"
+    ],
+    "impact": {
+      "affectedAreas": [
+        "src/models",
+        "src/controllers",
+        "src/repositories",
+        "src/app.ts"
+      ],
+      "isBreaking": false,
+      "riskLevel": "low"
+    }
+  },
+  "specs": [
+    {
+      "capability": "task-model",
+      "operation": "ADDED",
+      "requirements": [
+        {
+          "name": "task-entity-structure",
+          "description": "Task entity MUST contain fields: id (UUID string), title (string), description (string nullable), status (enum PENDING|DONE), created_at (datetime), updated_at (datetime)",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "valid-task-structure",
+              "when": "a Task entity is instantiated",
+              "then": "it MUST have all required fields with correct types"
+            }
+          ]
+        },
+        {
+          "name": "task-status-enum",
+          "description": "Task status MUST be restricted to enum values PENDING or DONE",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "valid-status-values",
+              "when": "a Task status is set",
+              "then": "it MUST only accept PENDING or DONE values"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "capability": "task-query-by-id",
+      "operation": "ADDED",
+      "requirements": [
+        {
+          "name": "get-task-by-id-endpoint",
+          "description": "System MUST provide GET /tasks/{id} endpoint to retrieve a specific task by its identifier",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "task-found",
+              "when": "GET /tasks/{id} is called with an existing task ID",
+              "then": "system MUST return status 200 with complete task data (id, title, description, status, created_at, updated_at)"
+            },
+            {
+              "name": "task-not-found",
+              "when": "GET /tasks/{id} is called with a non-existing task ID",
+              "then": "system MUST return status 404 with appropriate error message"
+            }
+          ]
+        },
+        {
+          "name": "query-idempotency",
+          "description": "GET /tasks/{id} MUST be idempotent and SHALL NOT modify task state",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "multiple-queries-same-result",
+              "when": "GET /tasks/{id} is called multiple times for the same task",
+              "then": "system MUST return identical results without modifying the task"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "capability": "task-list-query",
+      "operation": "ADDED",
+      "requirements": [
+        {
+          "name": "list-tasks-endpoint",
+          "description": "System MUST provide GET /tasks endpoint to retrieve all registered tasks",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "list-all-tasks",
+              "when": "GET /tasks is called",
+              "then": "system MUST return status 200 with array of tasks containing id, title, and status fields"
+            },
+            {
+              "name": "empty-list",
+              "when": "GET /tasks is called and no tasks exist",
+              "then": "system MUST return status 200 with empty array"
+            }
+          ]
+        },
+        {
+          "name": "list-ordering",
+          "description": "Task list MUST be ordered by created_at descending (most recent first)",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "ordered-by-creation-date",
+              "when": "GET /tasks is called with multiple tasks",
+              "then": "system MUST return tasks ordered by created_at in descending order"
+            }
+          ]
+        },
+        {
+          "name": "list-query-idempotency",
+          "description": "GET /tasks MUST be idempotent and SHALL NOT modify any task state",
+          "priority": "must",
+          "scenarios": [
+            {
+              "name": "list-does-not-modify",
+              "when": "GET /tasks is called multiple times",
+              "then": "system MUST return consistent results without modifying any task"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "category": "implementation",
+      "dependencies": [],
+      "description": "Criar src/models/task.ts com: (1) enum TaskStatus com valores PENDING e DONE, (2) interface Task com campos id (string), title (string), description (string | null), status (TaskStatus), created_at (Date), updated_at (Date), (3) interface TaskListItem com campos id, title, status para resposta da listagem. Exportar todos os tipos.",
+      "id": "1.1",
+      "title": "Criar modelo Task e tipos relacionados"
+    },
+    {
+      "category": "implementation",
+      "dependencies": [
+        "1.1"
+      ],
+      "description": "Criar src/repositories/task-repository.ts com classe TaskRepository contendo: (1) propriedade privada tasks como Map<string, Task>, (2) método findById(id: string): Task | undefined que busca tarefa pelo ID, (3) método findAll(): Task[] que retorna todas as tarefas ordenadas por created_at decrescente (mais recentes primeiro). Usar padrão singleton exportando instância única.",
+      "id": "2.1",
+      "title": "Criar repositório in-memory para tarefas"
+    },
+    {
+      "category": "implementation",
+      "dependencies": [
+        "1.1",
+        "2.1"
+      ],
+      "description": "Criar src/controllers/task-controller.ts com classe TaskController usando decorators tsoa: (1) @Route('tasks') na classe, (2) método GET com @Get('{id}') que recebe @Path() id: string, busca no repositório e retorna Task completa ou throw NotFoundError (status 404), (3) método GET com @Get() que retorna array de TaskListItem ordenado por created_at desc. Registrar rota no src/app.ts importando o controller. Imports com extensão .js.",
+      "id": "3.1",
+      "title": "Criar controller de tarefas com endpoints GET /tasks e GET /tasks/{id}"
+    },
+    {
+      "category": "testing",
+      "dependencies": [
+        "3.1"
+      ],
+      "description": "Criar src/tests/task-query.test.ts com testes: (1) GET /tasks retorna 200 com array vazio quando não há tarefas, (2) GET /tasks retorna lista ordenada por created_at desc, (3) GET /tasks/{id} retorna 200 com dados completos da tarefa existente, (4) GET /tasks/{id} retorna 404 para ID inexistente, (5) múltiplas chamadas GET retornam mesmo resultado (idempotência).",
+      "id": "4.1",
+      "title": "Implementar testes de consulta de tarefas"
+    },
+    {
+      "category": "documentation",
+      "dependencies": [
+        "3.1"
+      ],
+      "description": "Atualizar README.md com: (1) descrição dos endpoints GET /tasks e GET /tasks/{id}, (2) exemplos de request/response para cada endpoint, (3) códigos de status possíveis (200, 404), (4) estrutura do modelo Task.",
+      "id": "5.1",
+      "title": "Documentar endpoints de consulta no README"
+    }
+  ]
+}
